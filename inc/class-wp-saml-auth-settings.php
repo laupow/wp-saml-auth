@@ -142,31 +142,38 @@ class WP_SAML_Auth_Settings {
 	 */
 	public static function render_page_content() {
 		?>
-		<div class="wrap">
-			<h2><?php esc_html_e( 'WP SAML Auth Settings', 'wp-saml-auth' ); ?></h2>
+        <div class="wrap">
+            <h2><?php esc_html_e( 'WP SAML Auth Settings', 'wp-saml-auth' ); ?></h2>
+            <p>
+				<?php
+				$instance = WP_SAML_Auth::get_instance();
+				$sp_metadata_url = home_url( $instance->get_internal_endpoint() ) . '/sp/metadata/';
+				echo sprintf( __( 'SAML SP Metadata URL : <a href="%s">%s</a>.', 'wp-saml-auth' ), $sp_metadata_url, $sp_metadata_url );
+				?>
+            </p>
 			<?php if ( WP_SAML_Auth_Options::has_settings_filter() ) : ?>
-				<p>
-				<?php
-				// translators: Link to the plugin settings page.
-				echo sprintf( __( 'Settings are defined with a filter and unavailable for editing through the backend. <a href="%s">Visit the plugin page</a> for more information.', 'wp-saml-auth' ), 'https://wordpress.org/plugins/wp-saml-auth/' );
-				?>
-				</p>
-			<?php else : ?>
-				<p>
-				<?php
-				// translators: Link to the plugin settings page.
-				echo sprintf( __( 'Use the following settings to configure WP SAML Auth with the \'internal\' connection type. <a href="%s">Visit the plugin page</a> for more information.', 'wp-saml-auth' ), 'https://wordpress.org/plugins/wp-saml-auth/' );
-				?>
-				</p>
-				<form method="post" action="options.php">
+                <p>
 					<?php
-						settings_fields( self::$option_group );
-						do_settings_sections( WP_SAML_Auth_Options::get_option_name() );
-						submit_button();
+					// translators: Link to the plugin settings page.
+					echo sprintf( __( 'Settings are defined with a filter and unavailable for editing through the backend. <a href="%s">Visit the plugin page</a> for more information.', 'wp-saml-auth' ), 'https://wordpress.org/plugins/wp-saml-auth/' );
 					?>
-				</form>
+                </p>
+			<?php else : ?>
+                <p>
+					<?php
+					// translators: Link to the plugin settings page.
+					echo sprintf( __( 'Use the following settings to configure WP SAML Auth with the \'internal\' connection type. <a href="%s">Visit the plugin page</a> for more information.', 'wp-saml-auth' ), 'https://wordpress.org/plugins/wp-saml-auth/' );
+					?>
+                </p>
+                <form method="post" action="options.php">
+					<?php
+					settings_fields( self::$option_group );
+					do_settings_sections( WP_SAML_Auth_Options::get_option_name() );
+					submit_button();
+					?>
+                </form>
 			<?php endif; ?>
-		</div>
+        </div>
 		<?php
 	}
 

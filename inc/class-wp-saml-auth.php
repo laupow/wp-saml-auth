@@ -33,6 +33,14 @@ class WP_SAML_Auth {
 	private $simplesamlphp_class = 'SimpleSAML_Auth_Simple';
 
 	/**
+	 * Endpoint when using the internal connection type
+	 * To be used to get XML metadata of the SP at /saml/sp/metadata/
+	 *
+	 * @var string
+	 */
+	private $internal_connection_endpoint = 'saml';
+
+	/**
 	 * Get the controller instance
 	 *
 	 * @return object
@@ -65,6 +73,20 @@ class WP_SAML_Auth {
 	}
 
 	/**
+	 * Get the endpoint for internal connection type
+	 *
+	 * @return string 'saml' or empty string if using SimpleSAMLphp instead of the internal lib
+	 */
+	public function get_internal_endpoint() {
+		$connection_type = self::get_option( 'connection_type' );
+		if ( 'internal' !== $connection_type ) {
+			return '';
+		}
+
+		return $this->internal_connection_endpoint;
+	}
+
+	/**
 	 * Initialize the controller logic on the 'init' hook
 	 */
 	public function action_init() {
@@ -88,6 +110,18 @@ class WP_SAML_Auth {
 			}
 			$auth_config    = self::get_option( 'internal_config' );
 			$this->provider = new OneLogin\Saml2\Auth( $auth_config );
+
+			add_action( 'template_redirect', array( $this, 'action_template_redirect' ) );
+
+			add_rewrite_endpoint( $this->internal_connection_endpoint, EP_ROOT, true );
+
+			// Attempt to flush rewrite rules on plugin activation, not perfect but it should work at least the first time
+			if ( ! get_option( 'wp_saml_rr_flushed' ) ) {
+				flush_rewrite_rules();
+				do_action( 'rri_flush_rules' ); // Proper flushing on VIP environments
+				add_option( 'wp_saml_rr_flushed', true );
+			}
+
 		} else {
 			$simplesamlphp_path = self::get_option( 'simplesamlphp_autoload' );
 			if ( file_exists( $simplesamlphp_path ) ) {
@@ -119,7 +153,6 @@ class WP_SAML_Auth {
 		add_action( 'wp_logout', array( $this, 'action_wp_logout' ) );
 		add_filter( 'login_body_class', array( $this, 'filter_login_body_class' ) );
 		add_filter( 'authenticate', array( $this, 'filter_authenticate' ), 21, 3 ); // after wp_authenticate_username_password runs.
-
 	}
 
 	/**
@@ -194,6 +227,35 @@ class WP_SAML_Auth {
 	}
 
 	/**
+	 * Handle the SAML endpoint used with internal connections
+	 */
+	public function action_template_redirect() {
+		global $wp_query;
+
+		// Do not block access to SAML endpoint if blog is not public
+		if ( class_exists( 'ds_more_privacy_options' ) ) {
+			global $ds_more_privacy_options; // @codingStandardsIgnoreLine
+			remove_action( 'template_redirect', [ $ds_more_privacy_options, 'ds_users_authenticator' ] );
+		}
+
+		$endpoint = $this->get_internal_endpoint();
+		if ( ! isset( $wp_query->query_vars[ $endpoint ] ) ) {
+			return;
+		}
+
+		if ( self::get_option( 'connection_type' ) !== 'internal' ) {
+			wp_die( esc_html__( 'This endpoint is only available with the internal connection type and OneLogin SAML library', 'wp-saml-auth' ) );
+		}
+
+		if ( $wp_query->query_vars[ $endpoint ] === 'sp/metadata' ) {
+			$this->do_sp_metadata_export( self::get_provider() );
+		}
+
+		wp_safe_redirect( home_url(), 404 );
+		exit;
+	}
+
+	/**
 	 * Add body classes for our specific configuration attributes
 	 *
 	 * @param array $classes Body CSS classes.
@@ -229,6 +291,31 @@ class WP_SAML_Auth {
 			$user = $this->do_saml_authentication();
 		}
 		return $user;
+	}
+
+	/**
+	 * Echo an XML representation of the SP Metadata
+	 * Only applies when the connection type is internal
+	 * @param \OneLogin\Saml2\Auth $auth
+	 */
+	public function do_sp_metadata_export( \OneLogin\Saml2\Auth $auth ) {
+		$settings = $auth->getSettings();
+
+		$metadata = null;
+		try {
+			$metadata = $settings->getSPMetadata();
+			$errors   = $settings->validateMetadata( $metadata );
+		} catch ( \Exception $e ) {
+			$errors = $e->getMessage();
+		}
+
+		if ( $errors ) {
+			wp_die( esc_html__( 'Invalid SAML settings. Contact your administrator.', 'wp-saml-auth' ) );
+		}
+
+		header( 'Content-Type: text/xml' );
+		echo $metadata; // @codingStandardsIgnoreLine
+		exit;
 	}
 
 	/**
